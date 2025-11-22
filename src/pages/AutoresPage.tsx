@@ -1,14 +1,28 @@
 import { useState, useEffect } from 'react'
 import { supabase, Autor } from '../supabaseClient'
+import Toast from '../components/Toast'
+
+interface ToastState {
+  message: string
+  type: 'success' | 'error' | 'info'
+}
 
 export default function AutoresPage() {
   const [autores, setAutores] = useState<Autor[]>([])
   const [nombre, setNombre] = useState('')
   const [nacionalidad, setNacionalidad] = useState('')
   const [editingAutor, setEditingAutor] = useState<Autor | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [toast, setToast] = useState<ToastState | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ message, type })
+  }
 
   // Función para obtener todos los autores
   const fetchAutores = async () => {
+    setLoading(true)
     try {
       const { data, error } = await supabase
         .from('autores')
@@ -19,7 +33,9 @@ export default function AutoresPage() {
       if (data) setAutores(data)
     } catch (error) {
       console.error('Error al obtener autores:', error)
-      alert('Error al obtener autores')
+      showToast('Error al obtener autores', 'error')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -28,10 +44,11 @@ export default function AutoresPage() {
     e.preventDefault()
 
     if (!nombre.trim() || !nacionalidad.trim()) {
-      alert('Por favor completa todos los campos')
+      showToast('Por favor completa todos los campos', 'error')
       return
     }
 
+    setSubmitting(true)
     try {
       if (editingAutor) {
         // UPDATE
@@ -41,7 +58,7 @@ export default function AutoresPage() {
           .eq('id', editingAutor.id)
 
         if (error) throw error
-        alert('Autor actualizado correctamente')
+        showToast('Autor actualizado correctamente', 'success')
       } else {
         // INSERT
         const { error } = await supabase
@@ -49,7 +66,7 @@ export default function AutoresPage() {
           .insert([{ nombre, nacionalidad }])
 
         if (error) throw error
-        alert('Autor creado correctamente')
+        showToast('Autor creado correctamente', 'success')
       }
 
       // Limpiar formulario y recargar datos
@@ -59,7 +76,9 @@ export default function AutoresPage() {
       fetchAutores()
     } catch (error) {
       console.error('Error al guardar autor:', error)
-      alert('Error al guardar autor')
+      showToast('Error al guardar autor', 'error')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -68,6 +87,8 @@ export default function AutoresPage() {
     setNombre(autor.nombre)
     setNacionalidad(autor.nacionalidad)
     setEditingAutor(autor)
+    // Scroll suave al formulario
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   // Función para manejar la eliminación
@@ -83,12 +104,18 @@ export default function AutoresPage() {
         .eq('id', id)
 
       if (error) throw error
-      alert('Autor eliminado correctamente')
+      showToast('Autor eliminado correctamente', 'success')
       fetchAutores()
     } catch (error) {
       console.error('Error al eliminar autor:', error)
-      alert('Error al eliminar autor. Verifica que no tenga libros asociados.')
+      showToast('Error al eliminar autor. Verifica que no tenga libros asociados.', 'error')
     }
+  }
+
+  const handleCancel = () => {
+    setNombre('')
+    setNacionalidad('')
+    setEditingAutor(null)
   }
 
   // Cargar autores al montar el componente
@@ -97,59 +124,97 @@ export default function AutoresPage() {
   }, [])
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">Gestión de Autores</h1>
+    <div className="space-y-6">
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      {/* Header */}
+      <div className="text-center mb-8">
+        <h1 className="text-4xl font-bold text-gray-800 mb-2 flex items-center justify-center gap-3">
+          <span className="text-5xl">👤</span>
+          Gestión de Autores
+        </h1>
+        <p className="text-gray-600">Administra los autores de tu biblioteca</p>
+      </div>
 
       {/* Formulario de Creación/Edición */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-xl font-semibold mb-4 text-gray-700">
-          {editingAutor ? 'Editar Autor' : 'Nuevo Autor'}
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="nombre" className="block text-sm font-medium text-gray-700 mb-1">
-              Nombre
-            </label>
-            <input
-              type="text"
-              id="nombre"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Nombre del autor"
-              required
-            />
+      <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100 hover:shadow-xl transition-shadow duration-300">
+        <div className="flex items-center gap-3 mb-6">
+          <span className="text-2xl">
+            {editingAutor ? '✏️' : '➕'}
+          </span>
+          <h2 className="text-2xl font-bold text-gray-800">
+            {editingAutor ? 'Editar Autor' : 'Nuevo Autor'}
+          </h2>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid md:grid-cols-2 gap-5">
+            <div>
+              <label
+                htmlFor="nombre"
+                className="block text-sm font-semibold text-gray-700 mb-2"
+              >
+                Nombre del Autor
+              </label>
+              <input
+                type="text"
+                id="nombre"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                placeholder="Ej: Gabriel García Márquez"
+                required
+                disabled={submitting}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="nacionalidad"
+                className="block text-sm font-semibold text-gray-700 mb-2"
+              >
+                Nacionalidad
+              </label>
+              <input
+                type="text"
+                id="nacionalidad"
+                value={nacionalidad}
+                onChange={(e) => setNacionalidad(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                placeholder="Ej: Colombiano"
+                required
+                disabled={submitting}
+              />
+            </div>
           </div>
-          <div>
-            <label htmlFor="nacionalidad" className="block text-sm font-medium text-gray-700 mb-1">
-              Nacionalidad
-            </label>
-            <input
-              type="text"
-              id="nacionalidad"
-              value={nacionalidad}
-              onChange={(e) => setNacionalidad(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Nacionalidad del autor"
-              required
-            />
-          </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 pt-2">
             <button
               type="submit"
-              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+              disabled={submitting}
+              className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 font-semibold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              {editingAutor ? 'Actualizar' : 'Crear'}
+              {submitting ? (
+                <>
+                  <span className="animate-spin">⏳</span>
+                  {editingAutor ? 'Actualizando...' : 'Creando...'}
+                </>
+              ) : (
+                <>
+                  <span>{editingAutor ? '💾' : '✨'}</span>
+                  {editingAutor ? 'Actualizar Autor' : 'Crear Autor'}
+                </>
+              )}
             </button>
             {editingAutor && (
               <button
                 type="button"
-                onClick={() => {
-                  setNombre('')
-                  setNacionalidad('')
-                  setEditingAutor(null)
-                }}
-                className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+                onClick={handleCancel}
+                disabled={submitting}
+                className="px-8 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-200 font-semibold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancelar
               </button>
@@ -159,63 +224,94 @@ export default function AutoresPage() {
       </div>
 
       {/* Tabla de Lectura */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <h2 className="text-xl font-semibold p-6 text-gray-700 border-b border-gray-200">
-          Lista de Autores
-        </h2>
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
+        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <span>📋</span>
+              Lista de Autores
+            </h2>
+            <span className="px-4 py-1.5 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold">
+              {autores.length} {autores.length === 1 ? 'autor' : 'autores'}
+            </span>
+          </div>
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Nombre
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Nacionalidad
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Acciones
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {autores.length === 0 ? (
+          {loading ? (
+            <div className="p-12 text-center">
+              <div className="inline-block animate-spin text-4xl mb-4">⏳</div>
+              <p className="text-gray-600 font-medium">Cargando autores...</p>
+            </div>
+          ) : autores.length === 0 ? (
+            <div className="p-12 text-center">
+              <div className="text-6xl mb-4">📭</div>
+              <p className="text-gray-600 font-medium text-lg">
+                No hay autores registrados
+              </p>
+              <p className="text-gray-500 text-sm mt-2">
+                Crea tu primer autor usando el formulario de arriba
+              </p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead className="bg-gray-50">
                 <tr>
-                  <td colSpan={3} className="px-6 py-4 text-center text-gray-500">
-                    No hay autores registrados
-                  </td>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Nombre
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Nacionalidad
+                  </th>
+                  <th className="px-6 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Acciones
+                  </th>
                 </tr>
-              ) : (
-                autores.map((autor) => (
-                  <tr key={autor.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {autor.nombre}
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {autores.map((autor, index) => (
+                  <tr
+                    key={autor.id}
+                    className="hover:bg-blue-50 transition-colors duration-150"
+                    style={{
+                      animation: `fadeIn 0.3s ease-out ${index * 0.05}s both`,
+                    }}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">👤</span>
+                        <span className="text-sm font-semibold text-gray-900">
+                          {autor.nombre}
+                        </span>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {autor.nacionalidad}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-medium">
+                        {autor.nacionalidad}
+                      </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button
-                        onClick={() => handleEdit(autor)}
-                        className="text-blue-600 hover:text-blue-900 mr-4"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleDelete(autor.id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        Eliminar
-                      </button>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleEdit(autor)}
+                          className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 font-medium text-sm"
+                        >
+                          ✏️ Editar
+                        </button>
+                        <button
+                          onClick={() => handleDelete(autor.id)}
+                          className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 transition-all duration-200 font-medium text-sm"
+                        >
+                          🗑️ Eliminar
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
   )
 }
-
