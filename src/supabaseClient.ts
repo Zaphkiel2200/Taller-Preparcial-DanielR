@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Interfaces para los tipos de datos
+// Tipos para los datos
 export interface Autor {
   id: string
   nombre: string
@@ -22,5 +22,23 @@ export interface Libro {
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Verificar si Supabase está configurado
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey)
+
+// Crear cliente de Supabase solo si está configurado
+// Si no está configurado, creamos un cliente dummy que no hará nada
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : ({
+      from: () => ({
+        select: () => Promise.resolve({ data: null, error: null }),
+        insert: () => Promise.resolve({ data: null, error: null }),
+        update: () => ({
+          eq: () => Promise.resolve({ data: null, error: null }),
+        }),
+        delete: () => ({
+          eq: () => Promise.resolve({ data: null, error: null }),
+        }),
+      }),
+    } as any)
 

@@ -1,10 +1,25 @@
 import { useState, useEffect } from 'react'
-import { supabase, Autor } from '../supabaseClient'
+import { supabase, isSupabaseConfigured } from '../supabaseClient'
+import type { Autor } from '../supabaseClient'
 import Toast from '../components/Toast'
 
 interface ToastState {
   message: string
   type: 'success' | 'error' | 'info'
+}
+
+// Datos de ejemplo para modo demo
+const getDemoAutores = (): Autor[] => {
+  const stored = localStorage.getItem('demo_autores')
+  if (stored) {
+    return JSON.parse(stored)
+  }
+  // Datos iniciales de ejemplo
+  return [
+    { id: '1', nombre: 'Gabriel García Márquez', nacionalidad: 'Colombiano' },
+    { id: '2', nombre: 'Mario Vargas Llosa', nacionalidad: 'Peruano' },
+    { id: '3', nombre: 'Isabel Allende', nacionalidad: 'Chilena' },
+  ]
 }
 
 export default function AutoresPage() {
@@ -24,16 +39,29 @@ export default function AutoresPage() {
   const fetchAutores = async () => {
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('autores')
-        .select('*')
-        .order('nombre', { ascending: true })
+      if (isSupabaseConfigured && supabase) {
+        // Modo con Supabase
+        const { data, error } = await supabase
+          .from('autores')
+          .select('*')
+          .order('nombre', { ascending: true })
 
-      if (error) throw error
-      if (data) setAutores(data)
+        if (error) throw error
+        if (data) setAutores(data)
+      } else {
+        // Modo demo - usar datos locales
+        await new Promise((resolve) => setTimeout(resolve, 500)) // Simular carga
+        const demoAutores = getDemoAutores()
+        setAutores(demoAutores)
+      }
     } catch (error) {
       console.error('Error al obtener autores:', error)
-      showToast('Error al obtener autores', 'error')
+      // Si falla Supabase, usar datos demo
+      const demoAutores = getDemoAutores()
+      setAutores(demoAutores)
+      if (isSupabaseConfigured) {
+        showToast('Error al conectar con Supabase. Usando modo demo.', 'info')
+      }
     } finally {
       setLoading(false)
     }
@@ -50,23 +78,51 @@ export default function AutoresPage() {
 
     setSubmitting(true)
     try {
-      if (editingAutor) {
-        // UPDATE
-        const { error } = await supabase
-          .from('autores')
-          .update({ nombre, nacionalidad })
-          .eq('id', editingAutor.id)
+      if (isSupabaseConfigured && supabase) {
+        // Modo con Supabase
+        if (editingAutor) {
+          // UPDATE
+          const { error } = await supabase
+            .from('autores')
+            .update({ nombre, nacionalidad })
+            .eq('id', editingAutor.id)
 
-        if (error) throw error
-        showToast('Autor actualizado correctamente', 'success')
+          if (error) throw error
+          showToast('Autor actualizado correctamente', 'success')
+        } else {
+          // INSERT
+          const { error } = await supabase
+            .from('autores')
+            .insert([{ nombre, nacionalidad }])
+
+          if (error) throw error
+          showToast('Autor creado correctamente', 'success')
+        }
       } else {
-        // INSERT
-        const { error } = await supabase
-          .from('autores')
-          .insert([{ nombre, nacionalidad }])
-
-        if (error) throw error
-        showToast('Autor creado correctamente', 'success')
+        // Modo demo - guardar en localStorage
+        await new Promise((resolve) => setTimeout(resolve, 300)) // Simular guardado
+        const currentAutores = getDemoAutores()
+        
+        if (editingAutor) {
+          // UPDATE
+          const updated = currentAutores.map((a) =>
+            a.id === editingAutor.id ? { ...a, nombre, nacionalidad } : a
+          )
+          localStorage.setItem('demo_autores', JSON.stringify(updated))
+          showToast('Autor actualizado correctamente (modo demo)', 'success')
+        } else {
+          // INSERT
+          const newAutor: Autor = {
+            id: Date.now().toString(),
+            nombre,
+            nacionalidad,
+          }
+          const updated = [...currentAutores, newAutor].sort((a, b) =>
+            a.nombre.localeCompare(b.nombre)
+          )
+          localStorage.setItem('demo_autores', JSON.stringify(updated))
+          showToast('Autor creado correctamente (modo demo)', 'success')
+        }
       }
 
       // Limpiar formulario y recargar datos
@@ -98,13 +154,23 @@ export default function AutoresPage() {
     }
 
     try {
-      const { error } = await supabase
-        .from('autores')
-        .delete()
-        .eq('id', id)
+      if (isSupabaseConfigured && supabase) {
+        // Modo con Supabase
+        const { error } = await supabase
+          .from('autores')
+          .delete()
+          .eq('id', id)
 
-      if (error) throw error
-      showToast('Autor eliminado correctamente', 'success')
+        if (error) throw error
+        showToast('Autor eliminado correctamente', 'success')
+      } else {
+        // Modo demo - eliminar de localStorage
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        const currentAutores = getDemoAutores()
+        const updated = currentAutores.filter((a) => a.id !== id)
+        localStorage.setItem('demo_autores', JSON.stringify(updated))
+        showToast('Autor eliminado correctamente (modo demo)', 'success')
+      }
       fetchAutores()
     } catch (error) {
       console.error('Error al eliminar autor:', error)
@@ -140,6 +206,13 @@ export default function AutoresPage() {
           Gestión de Autores
         </h1>
         <p className="text-gray-600">Administra los autores de tu biblioteca</p>
+        {!isSupabaseConfigured && (
+          <div className="mt-4 inline-block px-4 py-2 bg-amber-100 border border-amber-300 rounded-lg">
+            <p className="text-amber-800 text-sm font-medium">
+              ⚠️ Modo Demo: Los datos se guardan localmente. Configura Supabase para usar la base de datos.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Formulario de Creación/Edición */}

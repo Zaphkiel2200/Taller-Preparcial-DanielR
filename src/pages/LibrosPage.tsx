@@ -1,10 +1,48 @@
 import { useState, useEffect } from 'react'
-import { supabase, Libro, Autor } from '../supabaseClient'
+import { supabase, isSupabaseConfigured } from '../supabaseClient'
+import type { Libro, Autor } from '../supabaseClient'
 import Toast from '../components/Toast'
 
 interface ToastState {
   message: string
   type: 'success' | 'error' | 'info'
+}
+
+// Datos de ejemplo para modo demo
+const getDemoAutores = (): Autor[] => {
+  const stored = localStorage.getItem('demo_autores')
+  if (stored) {
+    return JSON.parse(stored)
+  }
+  return [
+    { id: '1', nombre: 'Gabriel García Márquez', nacionalidad: 'Colombiano' },
+    { id: '2', nombre: 'Mario Vargas Llosa', nacionalidad: 'Peruano' },
+    { id: '3', nombre: 'Isabel Allende', nacionalidad: 'Chilena' },
+  ]
+}
+
+const getDemoLibros = (): Libro[] => {
+  const stored = localStorage.getItem('demo_libros')
+  if (stored) {
+    return JSON.parse(stored)
+  }
+  const autores = getDemoAutores()
+  return [
+    {
+      id: '1',
+      titulo: 'Cien años de soledad',
+      anio_publicacion: 1967,
+      autor_id: autores[0]?.id || '1',
+      autores: { nombre: autores[0]?.nombre || 'Gabriel García Márquez' },
+    },
+    {
+      id: '2',
+      titulo: 'La ciudad y los perros',
+      anio_publicacion: 1963,
+      autor_id: autores[1]?.id || '2',
+      autores: { nombre: autores[1]?.nombre || 'Mario Vargas Llosa' },
+    },
+  ]
 }
 
 export default function LibrosPage() {
@@ -25,16 +63,28 @@ export default function LibrosPage() {
   // Función para obtener todos los autores
   const fetchAutores = async () => {
     try {
-      const { data, error } = await supabase
-        .from('autores')
-        .select('*')
-        .order('nombre', { ascending: true })
+      if (isSupabaseConfigured && supabase) {
+        // Modo con Supabase
+        const { data, error } = await supabase
+          .from('autores')
+          .select('*')
+          .order('nombre', { ascending: true })
 
-      if (error) throw error
-      if (data) setAutores(data)
+        if (error) throw error
+        if (data) setAutores(data)
+      } else {
+        // Modo demo - usar datos locales
+        const demoAutores = getDemoAutores()
+        setAutores(demoAutores)
+      }
     } catch (error) {
       console.error('Error al obtener autores:', error)
-      showToast('Error al obtener autores', 'error')
+      // Si falla Supabase, usar datos demo
+      const demoAutores = getDemoAutores()
+      setAutores(demoAutores)
+      if (isSupabaseConfigured) {
+        showToast('Error al conectar con Supabase. Usando modo demo.', 'info')
+      }
     }
   }
 
@@ -42,16 +92,48 @@ export default function LibrosPage() {
   const fetchLibros = async () => {
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('libros')
-        .select('*, autores(nombre)')
-        .order('titulo', { ascending: true })
+      if (isSupabaseConfigured && supabase) {
+        // Modo con Supabase
+        const { data, error } = await supabase
+          .from('libros')
+          .select('*, autores(nombre)')
+          .order('titulo', { ascending: true })
 
-      if (error) throw error
-      if (data) setLibros(data)
+        if (error) throw error
+        if (data) setLibros(data)
+      } else {
+        // Modo demo - usar datos locales
+        await new Promise((resolve) => setTimeout(resolve, 500)) // Simular carga
+        const demoLibros = getDemoLibros()
+        // Enriquecer con nombres de autores
+        const autoresMap = getDemoAutores().reduce((acc, autor) => {
+          acc[autor.id] = autor.nombre
+          return acc
+        }, {} as Record<string, string>)
+        
+        const enrichedLibros = demoLibros.map((libro) => ({
+          ...libro,
+          autores: { nombre: autoresMap[libro.autor_id] || 'Desconocido' },
+        }))
+        setLibros(enrichedLibros)
+      }
     } catch (error) {
       console.error('Error al obtener libros:', error)
-      showToast('Error al obtener libros', 'error')
+      // Si falla Supabase, usar datos demo
+      const demoLibros = getDemoLibros()
+      const autoresMap = getDemoAutores().reduce((acc, autor) => {
+        acc[autor.id] = autor.nombre
+        return acc
+      }, {} as Record<string, string>)
+      
+      const enrichedLibros = demoLibros.map((libro) => ({
+        ...libro,
+        autores: { nombre: autoresMap[libro.autor_id] || 'Desconocido' },
+      }))
+      setLibros(enrichedLibros)
+      if (isSupabaseConfigured) {
+        showToast('Error al conectar con Supabase. Usando modo demo.', 'info')
+      }
     } finally {
       setLoading(false)
     }
@@ -73,33 +155,72 @@ export default function LibrosPage() {
 
     setSubmitting(true)
     try {
-      if (editingLibro) {
-        // UPDATE
-        const { error } = await supabase
-          .from('libros')
-          .update({
-            titulo,
-            anio_publicacion: anioPublicacion,
-            autor_id: autorId,
-          })
-          .eq('id', editingLibro.id)
-
-        if (error) throw error
-        showToast('Libro actualizado correctamente', 'success')
-      } else {
-        // INSERT
-        const { error } = await supabase
-          .from('libros')
-          .insert([
-            {
+      if (isSupabaseConfigured && supabase) {
+        // Modo con Supabase
+        if (editingLibro) {
+          // UPDATE
+          const { error } = await supabase
+            .from('libros')
+            .update({
               titulo,
               anio_publicacion: anioPublicacion,
               autor_id: autorId,
-            },
-          ])
+            })
+            .eq('id', editingLibro.id)
 
-        if (error) throw error
-        showToast('Libro creado correctamente', 'success')
+          if (error) throw error
+          showToast('Libro actualizado correctamente', 'success')
+        } else {
+          // INSERT
+          const { error } = await supabase
+            .from('libros')
+            .insert([
+              {
+                titulo,
+                anio_publicacion: anioPublicacion,
+                autor_id: autorId,
+              },
+            ])
+
+          if (error) throw error
+          showToast('Libro creado correctamente', 'success')
+        }
+      } else {
+        // Modo demo - guardar en localStorage
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        const currentLibros = getDemoLibros()
+        const autorSeleccionado = getDemoAutores().find((a) => a.id === autorId)
+        
+        if (editingLibro) {
+          // UPDATE
+          const updated = currentLibros.map((l) =>
+            l.id === editingLibro.id
+              ? {
+                  ...l,
+                  titulo,
+                  anio_publicacion: anioPublicacion,
+                  autor_id: autorId,
+                  autores: { nombre: autorSeleccionado?.nombre || 'Desconocido' },
+                }
+              : l
+          )
+          localStorage.setItem('demo_libros', JSON.stringify(updated))
+          showToast('Libro actualizado correctamente (modo demo)', 'success')
+        } else {
+          // INSERT
+          const newLibro: Libro = {
+            id: Date.now().toString(),
+            titulo,
+            anio_publicacion: anioPublicacion,
+            autor_id: autorId,
+            autores: { nombre: autorSeleccionado?.nombre || 'Desconocido' },
+          }
+          const updated = [...currentLibros, newLibro].sort((a, b) =>
+            a.titulo.localeCompare(b.titulo)
+          )
+          localStorage.setItem('demo_libros', JSON.stringify(updated))
+          showToast('Libro creado correctamente (modo demo)', 'success')
+        }
       }
 
       // Limpiar formulario y recargar datos
@@ -133,10 +254,20 @@ export default function LibrosPage() {
     }
 
     try {
-      const { error } = await supabase.from('libros').delete().eq('id', id)
+      if (isSupabaseConfigured && supabase) {
+        // Modo con Supabase
+        const { error } = await supabase.from('libros').delete().eq('id', id)
 
-      if (error) throw error
-      showToast('Libro eliminado correctamente', 'success')
+        if (error) throw error
+        showToast('Libro eliminado correctamente', 'success')
+      } else {
+        // Modo demo - eliminar de localStorage
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        const currentLibros = getDemoLibros()
+        const updated = currentLibros.filter((l) => l.id !== id)
+        localStorage.setItem('demo_libros', JSON.stringify(updated))
+        showToast('Libro eliminado correctamente (modo demo)', 'success')
+      }
       fetchLibros()
     } catch (error) {
       console.error('Error al eliminar libro:', error)
@@ -174,6 +305,13 @@ export default function LibrosPage() {
           Gestión de Libros
         </h1>
         <p className="text-gray-600">Administra los libros de tu biblioteca</p>
+        {!isSupabaseConfigured && (
+          <div className="mt-4 inline-block px-4 py-2 bg-amber-100 border border-amber-300 rounded-lg">
+            <p className="text-amber-800 text-sm font-medium">
+              ⚠️ Modo Demo: Los datos se guardan localmente. Configura Supabase para usar la base de datos.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Formulario de Creación/Edición */}
